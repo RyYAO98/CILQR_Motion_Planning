@@ -1,9 +1,10 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.transforms import Affine2D
-from matplotlib.animation import FuncAnimation
+from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
 from utils import get_vehicle_front_and_rear_centers, get_ellipsoid_obstacle_scales
 import numpy as np
+import time
 
 
 def create_vehicle_patches(ax, x, y, yaw, length, width, wheelbase):
@@ -68,7 +69,7 @@ def update_patches(frame, ax, opti_x, obs_pred, obstacle_attr, ego_length, ego_w
     return ego_patches + obs_patches
 
 
-def vis(cfg, ref_waypoints, obstacle_attr, obs_pred, opti_x):
+def vis(cfg, ref_waypoints, obstacle_attr, obs_pred, opti_x, save_path=None, save_format='gif'):
     mpc_params = cfg['mpc']
     N = mpc_params['N']
 
@@ -78,7 +79,7 @@ def vis(cfg, ref_waypoints, obstacle_attr, obs_pred, opti_x):
     fig, ax = plt.subplots()
     plt.axis('equal')
     plt.xlim((ref_waypoints[0, 0] - 5, ref_waypoints[0, -1]))
-    ax.plot(ref_waypoints[0, :], ref_waypoints[1, :], c='lime', label='reference path')
+    ax.plot(ref_waypoints[0, :], ref_waypoints[1, :], c='lime', label='reference path', zorder=0)
 
     ego_patches, obs_patches = init_patches(ax, opti_x, obs_pred, obstacle_attr, ego_length, ego_width, ego_whba)
 
@@ -87,5 +88,20 @@ def vis(cfg, ref_waypoints, obstacle_attr, obs_pred, opti_x):
                               obs_patches)
 
     ani = FuncAnimation(fig, update, frames=N + 1, blit=False, repeat=False)
+
     plt.legend()
-    plt.show()
+
+    if save_path:
+        fps = int(1 / cfg['mpc']['dt'])
+
+        if save_format == 'mp4':
+            writer = FFMpegWriter(fps=fps)
+            ani.save(save_path, writer=writer)
+        elif save_format == 'gif':
+            writer = PillowWriter(fps=fps)
+            ani.save(save_path, writer=writer)
+        else:
+            raise ValueError("Unsupported save format. Use 'mp4' or 'gif'.")
+
+    else:
+        plt.show()

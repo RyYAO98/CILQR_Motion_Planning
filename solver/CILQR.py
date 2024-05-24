@@ -86,6 +86,9 @@ class CILQR:
 
         # Run a backwards pass from N-1 control step
         for i in range(self.N - 1, -1, -1):
+            # This part of the implementation references:
+            # https://github.com/Bharath2/iLQR/blob/main/ilqr/controller.py
+
             # Q_terms
             Q_x = l_x[:, i] + df_dx[:, :, i].T @ V_x
             Q_u = l_u[:, i] + df_du[:, :, i].T @ V_x
