@@ -6,7 +6,6 @@ from solver.CILQR import CILQR
 from animation import vis
 
 
-# 加载配置文件
 def load_config(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
         config = yaml.safe_load(file)
@@ -44,7 +43,6 @@ def obstacle_pred_loader(config):
     return utils.const_velo_prediction(obstacle_state, N, dt, obstacle_whba)
 
 
-# 主函数
 def main():
     config = load_config('config.yaml')
 
