@@ -2,13 +2,12 @@ import numpy as np
 from system_dynamics.vehicle_model import bicycle_model
 
 
-# 初始条件和参考轨迹
 def get_ref_waypoints(config):
     ref_traj = config['reference_trajectory']
     longit_ref = np.linspace(ref_traj['longit_ref'][0], ref_traj['longit_ref'][1], ref_traj['num_wpts'])
     lateral_ref = np.linspace(ref_traj['lateral_ref'][0], ref_traj['lateral_ref'][1], ref_traj['num_wpts'])
 
-    x_ref = np.vstack((longit_ref, lateral_ref))  # 参考轨迹点
+    x_ref = np.vstack((longit_ref, lateral_ref))
     return x_ref
 
 
