@@ -1,8 +1,8 @@
 mpc:
-  N: 60  # 预测时域
-  dt: 0.1  # 控制时间步长
-  nx: 4  # 状态变量的数量
-  nu: 2  # 控制变量的数量
+  N: 60
+  dt: 0.1
+  nx: 4
+  nu: 2
   w_pos: 1.0
   w_vel: 0.5
   w_acc: 1.0
@@ -31,7 +31,7 @@ vehicle:
   stl_lim: 1.57
 
 initial_condition:
-  state: [0., 0., 5.0, 0.]  # 初始状态
+  state: [0., 0., 5.0, 0.]
 
 obstacle:
   init_state: [5.0, 1.2, 3.0, 0.]
