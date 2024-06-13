@@ -34,12 +34,24 @@ initial_condition:
   state: [0., 0., 5.0, 0.]
 
 obstacle:
-  init_state: [5.0, 1.2, 3.0, 0.]
-  action_gt: [0., 0.] # constant velocity, no steering
-  wheelbase: 2.7
-  width: 1.5
-  length: 3.2
-  d_safe: 1.0 # safety buffer
+  init_state:
+            - [5., -1.2, 3.0, 0.]
+            - [25.0, 2.4, 0., 0.]
+  action_gt:
+            - [0., 0.] # constant velocity, no steering
+            - [0., 0.]
+  wheelbase:
+            - 2.7
+            - 2.5
+  width:
+            - 1.5
+            - 1.5
+  length:
+            - 3.2
+            - 3.0
+  d_safe:
+            - 1.0 # safety buffer
+            - 1.0
 
 reference_trajectory:
   longit_ref: [0, 40.0]

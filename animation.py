@@ -30,7 +30,7 @@ def create_obstacle_patches(ax, x, y, yaw, length, width, d_safe):
     return rect, ellipse
 
 
-def init_patches(ax, opti_x, obs_pred, obstacle_attr, ego_length, ego_width, ego_whba):
+def init_patches(ax, opti_x, obs_preds, obstacle_attrs, ego_length, ego_width, ego_whba):
     ego_patches = []
     obs_patches = []
 
@@ -41,35 +41,40 @@ def init_patches(ax, opti_x, obs_pred, obstacle_attr, ego_length, ego_width, ego
     ax.add_patch(front_circle)
     ax.add_patch(rear_circle)
 
-    obs_rect, ellipse = create_obstacle_patches(ax, obs_pred[0, 0], obs_pred[1, 0], obs_pred[3, 0], obstacle_attr[1],
-                                                obstacle_attr[0], obstacle_attr[2])
-    obs_patches.extend([obs_rect, ellipse])
-    ax.add_patch(obs_rect)
-    ax.add_patch(ellipse)
+    for i in range(len(obs_preds)):
+        obs_pred = obs_preds[i]
+        obstacle_attr = obstacle_attrs[i]
+        obs_rect, ellipse = create_obstacle_patches(ax, obs_pred[0, 0], obs_pred[1, 0], obs_pred[3, 0], obstacle_attr[1],
+                                                    obstacle_attr[0], obstacle_attr[2])
+        obs_patches.extend([obs_rect, ellipse])
+        ax.add_patch(obs_rect)
+        ax.add_patch(ellipse)
 
     return ego_patches, obs_patches
 
 
-def update_patches(frame, ax, opti_x, obs_pred, obstacle_attr, ego_length, ego_width, ego_whba, ego_patches,
+def update_patches(frame, ax, opti_x, obs_preds, obstacle_attrs, ego_length, ego_width, ego_whba, ego_patches,
                    obs_patches):
     ego_rect, front_circle, rear_circle = create_vehicle_patches(ax, opti_x[0, frame], opti_x[1, frame],
                                                                  opti_x[3, frame], ego_length, ego_width, ego_whba)
-    obs_rect, ellipse = create_obstacle_patches(ax, obs_pred[0, frame], obs_pred[1, frame], obs_pred[3, frame],
-                                                obstacle_attr[1], obstacle_attr[0], obstacle_attr[2])
-
     ego_patches.extend([ego_rect, front_circle, rear_circle])
-    obs_patches.extend([obs_rect, ellipse])
-
     ax.add_patch(ego_rect)
     ax.add_patch(front_circle)
     ax.add_patch(rear_circle)
-    ax.add_patch(obs_rect)
-    ax.add_patch(ellipse)
+
+    for i in range(len(obs_preds)):
+        obs_pred = obs_preds[i]
+        obstacle_attr = obstacle_attrs[i]
+        obs_rect, ellipse = create_obstacle_patches(ax, obs_pred[0, frame], obs_pred[1, frame], obs_pred[3, frame],
+                                                    obstacle_attr[1], obstacle_attr[0], obstacle_attr[2])
+        obs_patches.extend([obs_rect, ellipse])
+        ax.add_patch(obs_rect)
+        ax.add_patch(ellipse)
 
     return ego_patches + obs_patches
 
 
-def vis(cfg, ref_waypoints, obstacle_attr, obs_pred, opti_x, save_path=None, save_format='gif'):
+def vis(cfg, ref_waypoints, obstacle_attrs, obs_preds, opti_x, save_path=None, save_format='gif'):
     mpc_params = cfg['mpc']
     N = mpc_params['N']
 
@@ -79,12 +84,16 @@ def vis(cfg, ref_waypoints, obstacle_attr, obs_pred, opti_x, save_path=None, sav
     fig, ax = plt.subplots()
     plt.axis('equal')
     plt.xlim((ref_waypoints[0, 0] - 5, ref_waypoints[0, -1]))
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.title('CILQR for Autonomous Driving Motion Planning')
+    # plt.text(5, 10, 'Car Following')
     ax.plot(ref_waypoints[0, :], ref_waypoints[1, :], c='lime', label='reference path', zorder=0)
 
-    ego_patches, obs_patches = init_patches(ax, opti_x, obs_pred, obstacle_attr, ego_length, ego_width, ego_whba)
+    ego_patches, obs_patches = init_patches(ax, opti_x, obs_preds, obstacle_attrs, ego_length, ego_width, ego_whba)
 
     def update(frame):
-        return update_patches(frame, ax, opti_x, obs_pred, obstacle_attr, ego_length, ego_width, ego_whba, ego_patches,
+        return update_patches(frame, ax, opti_x, obs_preds, obstacle_attrs, ego_length, ego_width, ego_whba, ego_patches,
                               obs_patches)
 
     ani = FuncAnimation(fig, update, frames=N + 1, blit=False, repeat=False)

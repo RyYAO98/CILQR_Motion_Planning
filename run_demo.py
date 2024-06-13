@@ -27,8 +27,9 @@ def ref_velo_loader(config):
 
 def obstacle_attr_loader(config):
     obstacle_params = config['obstacle']
+    obstacle_attrs = np.array([obstacle_params['width'], obstacle_params['length'], obstacle_params['d_safe']]).transpose()
 
-    return np.array([obstacle_params['width'], obstacle_params['length'], obstacle_params['d_safe']])
+    return obstacle_attrs # shape: (num_obs, 3)
 
 
 def obstacle_pred_loader(config):
@@ -37,10 +38,21 @@ def obstacle_pred_loader(config):
     dt = mpc_params['dt']
 
     obstacle_params = config['obstacle']
-    obstacle_state = obstacle_params['init_state']
-    obstacle_whba = obstacle_params['wheelbase']
+    obstacle_states = obstacle_params['init_state']
+    obstacle_whbas = obstacle_params['wheelbase']
 
-    return utils.const_velo_prediction(obstacle_state, N, dt, obstacle_whba)
+    # improvement is needed regarding parallel implementation
+    num_obs = len(obstacle_states)
+    obstacle_preds = []
+    for i in range(num_obs):
+        cur_obstacle_state = obstacle_states[i]
+        cur_obstacle_whba = obstacle_whbas[i]
+        cur_obstacle_pred = utils.const_velo_prediction(cur_obstacle_state, N, dt, cur_obstacle_whba)
+        obstacle_preds.append(cur_obstacle_pred)
+
+    obstacle_preds = np.array(obstacle_preds)
+
+    return obstacle_preds # shape: (num_obs, 4, N+1)
 
 
 def main():
@@ -51,19 +63,19 @@ def main():
     ego_state = ego_state_loader(config)
     ref_waypoints = ref_waypoints_loader(config)
     ref_velo = ref_velo_loader(config)
-    obstacle_attr = obstacle_attr_loader(config)
-    obstacle_pred = obstacle_pred_loader(config)
+    obstacle_attrs = obstacle_attr_loader(config)
+    obstacle_preds = obstacle_pred_loader(config)
 
     solver_start_t = time.process_time()
     opti_u, opti_x = planner.solve(ego_state,
                                    ref_waypoints,
                                    ref_velo,
-                                   obstacle_attr,
-                                   obstacle_pred
+                                   obstacle_attrs,
+                                   obstacle_preds
                                    )
     print('----CILQR Solution Time: {} seconds----'.format(time.process_time() - solver_start_t))
 
-    vis(config, ref_waypoints, obstacle_attr, obstacle_pred, opti_x)
+    vis(config, ref_waypoints, obstacle_attrs, obstacle_preds, opti_x)
 
 
 main()

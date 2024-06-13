@@ -70,9 +70,9 @@ class CILQR:
 
         return nomi_u, nomi_x
 
-    def backward_pass(self, u, x, lamb, ref_waypoints, ref_velo, obs_attr, obs_pred):
+    def backward_pass(self, u, x, lamb, ref_waypoints, ref_velo, obs_attrs, obs_preds):
         l_u, l_uu, l_x, l_xx, l_ux = self.get_total_cost_derivatives_and_Hessians(u, x, ref_waypoints, ref_velo,
-                                                                                  obs_attr, obs_pred)
+                                                                                  obs_attrs, obs_preds)
         df_dx, df_du = get_N_steps_bicycle_model_derivatives(x, u, self.dt, self.wheelbase, self.N)
 
         delt_V = 0
@@ -127,7 +127,9 @@ class CILQR:
 
         return new_u, new_x
 
-    def get_total_cost(self, u, x, ref_waypoints, ref_velo, obs_attr, obs_pred):
+    def get_total_cost(self, u, x, ref_waypoints, ref_velo, obs_attrs, obs_preds):
+        num_obstacles = obs_attrs.shape[0]
+
         # part 1: costs included in the prime objective
         ref_exact_points = get_ref_exact_points(x[:2], ref_waypoints)
         ref_states = np.vstack([
@@ -146,7 +148,7 @@ class CILQR:
         for k in range(1, self.N + 1):
             u_k_minus_1 = u[:, k - 1]
             x_k = x[:, k]  # there is no need to count for the current state cost
-            obs_pred_k = obs_pred[:, k]
+            obs_preds_k = obs_preds[:, :, k]
 
             # acceleration constraints
             acc_up_constr = get_bound_constr(u_k_minus_1[0], self.acc_max, bound_type='upper')
@@ -161,9 +163,15 @@ class CILQR:
             velo_lo_constr = get_bound_constr(x_k[2], self.velo_min, bound_type='lower')
 
             # obstacle avoidance constraints
-            obs_avoid_front_constr, obs_avoid_rear_constr = get_obstacle_avoidance_constr(
-                x_k, obs_pred_k, self.wheelbase, self.width, obs_attr
-            )
+            obs_front_constr_list, obs_rear_constr_list = [], []
+            for j in range(num_obstacles):
+                obs_j_pred_k = obs_preds_k[j]
+                obs_j_attr = obs_attrs[j]
+                obs_j_front_constr, obs_j_rear_constr = get_obstacle_avoidance_constr(
+                    x_k, obs_j_pred_k, self.wheelbase, self.width, obs_j_attr
+                )
+                obs_front_constr_list.append(obs_j_front_constr)
+                obs_rear_constr_list.append(obs_j_rear_constr)
 
             J_barrier_k = exp_barrier(acc_up_constr, self.exp_q1, self.exp_q2) \
                           + exp_barrier(acc_lo_constr, self.exp_q1, self.exp_q2) \
@@ -171,8 +179,8 @@ class CILQR:
                           + exp_barrier(stl_lo_constr, self.exp_q1, self.exp_q2) \
                           + exp_barrier(velo_up_constr, self.exp_q1, self.exp_q2) \
                           + exp_barrier(velo_lo_constr, self.exp_q1, self.exp_q2) \
-                          + exp_barrier(obs_avoid_front_constr, self.exp_q1, self.exp_q2) \
-                          + exp_barrier(obs_avoid_rear_constr, self.exp_q1, self.exp_q2)
+                          + np.sum([exp_barrier(ofc, self.exp_q1, self.exp_q2) for ofc in obs_front_constr_list]) \
+                          + np.sum([exp_barrier(orc, self.exp_q1, self.exp_q2) for orc in obs_rear_constr_list])
 
             J_barrier += J_barrier_k
 
@@ -181,13 +189,14 @@ class CILQR:
 
         return J_tot
 
-    def get_total_cost_derivatives_and_Hessians(self, u, x, ref_waypoints, ref_velo, obs_attr, obs_pred):
+    def get_total_cost_derivatives_and_Hessians(self, u, x, ref_waypoints, ref_velo, obs_attrs, obs_preds):
         ref_exact_points = get_ref_exact_points(x[:2], ref_waypoints)
         ref_states = np.vstack([
             ref_exact_points,
             np.full(self.N + 1, ref_velo),
             np.zeros(self.N + 1)
         ])
+        num_obstacles = obs_attrs.shape[0]
 
         # part 1: cost derivatives due to the prime objective
         l_u_prime = 2 * (u.T @ self.ctrl_weight).T
@@ -241,7 +250,7 @@ class CILQR:
 
             # ---- State: (N + 1) steps ----
             x_k = x[:, k]
-            obs_pred_k = obs_pred[:, k]
+            obs_pred_k = obs_preds[:, :, k]
 
             # velocity constraints derivatives and Hessians
             velo_up_constr = get_bound_constr(x_k[2], self.velo_max, bound_type='upper')
@@ -257,25 +266,36 @@ class CILQR:
             )
 
             # obstacle avoidance constraints derivatives and Hessians
-            obs_avoid_front_constr, obs_avoid_rear_constr = get_obstacle_avoidance_constr(
-                x_k, obs_pred_k, self.wheelbase, self.width, obs_attr
-            )
-            obs_avoid_front_constr_over_x, obs_avoid_rear_constr_over_x = get_obstacle_avoidance_constr_derivatives(
-                x_k, obs_pred_k, self.wheelbase, self.width, obs_attr
-            )
-            obs_avoid_front_barrier_over_x, obs_avoid_front_barrier_over_xx = exp_barrier_derivative_and_Hessian(
-                obs_avoid_front_constr, obs_avoid_front_constr_over_x, self.exp_q1, self.exp_q2
-            )
-            obs_avoid_rear_barrier_over_x, obs_avoid_rear_barrier_over_xx = exp_barrier_derivative_and_Hessian(
-                obs_avoid_rear_constr, obs_avoid_rear_constr_over_x, self.exp_q1, self.exp_q2
-            )
+            obs_front_barrier_over_x_list, obs_front_barrier_over_xx_list = [], []
+            obs_rear_barrier_over_x_list, obs_rear_barrier_over_xx_list = [], []
+            for j in range(num_obstacles):
+                obs_j_pred_k = obs_pred_k[j]
+                obs_j_attr = obs_attrs[j]
+
+                obs_j_front_constr, obs_j_rear_constr = get_obstacle_avoidance_constr(
+                    x_k, obs_j_pred_k, self.wheelbase, self.width, obs_j_attr
+                )
+                obs_j_front_constr_over_x, obs_j_rear_constr_over_x = get_obstacle_avoidance_constr_derivatives(
+                    x_k, obs_j_pred_k, self.wheelbase, self.width, obs_j_attr
+                )
+                obs_j_front_barrier_over_x, obs_j_front_barrier_over_xx = exp_barrier_derivative_and_Hessian(
+                    obs_j_front_constr, obs_j_front_constr_over_x, self.exp_q1, self.exp_q2
+                )
+                obs_j_rear_barrier_over_x, obs_j_rear_barrier_over_xx = exp_barrier_derivative_and_Hessian(
+                    obs_j_rear_constr, obs_j_rear_constr_over_x, self.exp_q1, self.exp_q2
+                )
+
+                obs_front_barrier_over_x_list.append(obs_j_front_barrier_over_x)
+                obs_front_barrier_over_xx_list.append(obs_j_front_barrier_over_xx)
+                obs_rear_barrier_over_x_list.append(obs_j_rear_barrier_over_x)
+                obs_rear_barrier_over_xx_list.append(obs_j_rear_barrier_over_xx)
 
             # fill the state-related spaces
             l_x_barrier[:, k] = velo_up_barrier_over_x + velo_lo_barrier_over_x \
-                              + obs_avoid_front_barrier_over_x + obs_avoid_rear_barrier_over_x
+                              + np.sum(obs_front_barrier_over_x_list, axis=0) + np.sum(obs_rear_barrier_over_x_list, axis=0)
 
             l_xx_barrier[:, :, k] = velo_up_barrier_over_xx + velo_lo_barrier_over_xx \
-                                  + obs_avoid_front_barrier_over_xx + obs_avoid_rear_barrier_over_xx
+                                  + np.sum(obs_front_barrier_over_xx_list, axis=0) + np.sum(obs_rear_barrier_over_xx_list, axis=0)
 
         # Get the results by combining both components
         l_u = l_u_prime + l_u_barrier
@@ -287,15 +307,15 @@ class CILQR:
 
         return l_u, l_uu, l_x, l_xx, l_ux
 
-    def iter_step(self, u, x, J, lamb, ref_waypoints, ref_velo, obs_attr, obs_pred):
-        k, K, expc_redu = self.backward_pass(u, x, lamb, ref_waypoints, ref_velo, obs_attr, obs_pred)
+    def iter_step(self, u, x, J, lamb, ref_waypoints, ref_velo, obs_attrs, obs_preds):
+        k, K, expc_redu = self.backward_pass(u, x, lamb, ref_waypoints, ref_velo, obs_attrs, obs_preds)
 
         iter_effective_flag = False
         new_u, new_x, new_J = np.zeros((self.nu, self.N)), np.zeros((self.nx, self.N + 1)), sys.float_info.max
 
         for alpha in self.alpha_options:
             new_u, new_x = self.forward_pass(u, x, k, K, alpha)
-            new_J = self.get_total_cost(new_u, new_x, ref_waypoints, ref_velo, obs_attr, obs_pred)
+            new_J = self.get_total_cost(new_u, new_x, ref_waypoints, ref_velo, obs_attrs, obs_preds)
 
             if new_J < J:
                 iter_effective_flag = True
@@ -303,16 +323,16 @@ class CILQR:
 
         return new_u, new_x, new_J, iter_effective_flag
 
-    def solve(self, x0, ref_waypoints, ref_velo, obs_attr, obs_pred):
+    def solve(self, x0, ref_waypoints, ref_velo, obs_attrs, obs_preds):
         nomi_u, nomi_x = self.get_nominal_traj(x0)
-        J = self.get_total_cost(nomi_u, nomi_x, ref_waypoints, ref_velo, obs_attr, obs_pred)
+        J = self.get_total_cost(nomi_u, nomi_x, ref_waypoints, ref_velo, obs_attrs, obs_preds)
         u, x = nomi_u, nomi_x
 
         lamb = self.init_lamb
 
         for itr in range(self.max_iter):
             new_u, new_x, new_J, iter_effective_flag = self.iter_step(
-                u, x, J, lamb, ref_waypoints, ref_velo, obs_attr, obs_pred
+                u, x, J, lamb, ref_waypoints, ref_velo, obs_attrs, obs_preds
             )
 
             if iter_effective_flag:
